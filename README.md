@@ -115,13 +115,13 @@ aidlc-docs/    Design notes and implementation records
 
 For Meetings and Second Brain without a phone, follow the [Mac-only installation guide](docs/MAC-ONLY-INSTALL.md). Agents must also follow the [installation runbook](docs/AGENT-INSTALLATION.md).
 
-[Download AndroidBridge for Apple Silicon macOS 13+](https://github.com/germanilia/android-bridge/releases/latest/download/AndroidBridge-macOS-arm64.dmg).
+[Download AndroidBridge for Apple Silicon macOS 13+](https://github.com/iliagerman/android-bridge/releases/latest/download/AndroidBridge-macOS-arm64.dmg).
 
 Open the DMG, drag `AndroidBridge.app` to Applications, then Control-click the app and choose **Open**
 the first time. The app is not Apple-notarized because this project has no paid Apple Developer account.
 Do not disable Gatekeeper globally.
 
-The Android companion is optional. [Download the release-signed Android 13+ APK](https://github.com/germanilia/android-bridge/releases/latest/download/AndroidBridge-android.apk), then grant Android's normal
+The Android companion is optional. [Download the release-signed Android 13+ APK](https://github.com/iliagerman/android-bridge/releases/latest/download/AndroidBridge-android.apk), then grant Android's normal
 unknown-source/install consent for your browser or file manager.
 
 If you installed the old debug-signed `AndroidBridge-latest.apk` before version 0.1.0, Android cannot
@@ -141,7 +141,7 @@ The shell installer tracks the rolling `latest-build` prerelease, verifies its c
 the app only because you explicitly invoke it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/germanilia/android-bridge/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iliagerman/android-bridge/main/install.sh | bash
 ```
 
 See [release maintenance](docs/RELEASING.md) for signing, stable tags, and local non-publishing checks.

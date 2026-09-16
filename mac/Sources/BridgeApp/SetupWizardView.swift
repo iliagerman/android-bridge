@@ -277,7 +277,7 @@ struct SetupWizardView: View {
         }.padding(30).frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var apkURL: URL { URL(string: "https://github.com/germanilia/android-bridge/releases/latest/download/AndroidBridge-android.apk")! }
+    private var apkURL: URL { URL(string: "https://github.com/iliagerman/android-bridge/releases/latest/download/AndroidBridge-android.apk")! }
 
     private func qrImage(_ url: URL) -> NSImage? {
         let filter = CIFilter.qrCodeGenerator()

@@ -10,7 +10,7 @@ Older tags are not patched — upgrade before reporting an issue against an old 
 ## Reporting a vulnerability
 
 Report privately through GitHub:
-<https://github.com/germanilia/android-bridge/security/advisories/new>
+<https://github.com/iliagerman/android-bridge/security/advisories/new>
 
 Expect an acknowledgement within 7 days. Please do not publish exploit details before there is a fix
 or a documented mitigation.

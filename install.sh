@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPOSITORY="germanilia/android-bridge"
+REPOSITORY="iliagerman/android-bridge"
 APP_NAME="AndroidBridge.app"
 DMG_NAME="AndroidBridge-latest-macOS-arm64.dmg"
 CHECKSUM_NAME="${DMG_NAME}.sha256"

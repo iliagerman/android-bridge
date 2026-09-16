@@ -40,8 +40,8 @@ class AndroidUpdateTest : StringSpec({
             fixture.release().replace("\"prerelease\":false", "\"prerelease\":true"),
             fixture.release().replace("\"tag_name\":\"v1.10.0\"", "\"tag_name\":\"latest-build\""),
             fixture.release().replace("\"tag_name\":\"v1.10.0\"", "\"tag_name\":\"v1.9.0\""),
-            fixture.release().replace("\"assets\":[", "\"assets\":[{\"name\":\"${fixture.apkName}\",\"size\":3,\"browser_download_url\":\"https://github.com/germanilia/android-bridge/releases/download/v1.10.0/${fixture.apkName}\"},"),
-            fixture.release().replace("github.com/germanilia", "example.com/germanilia"),
+            fixture.release().replace("\"assets\":[", "\"assets\":[{\"name\":\"${fixture.apkName}\",\"size\":3,\"browser_download_url\":\"https://github.com/iliagerman/android-bridge/releases/download/v1.10.0/${fixture.apkName}\"},"),
+            fixture.release().replace("github.com/iliagerman", "example.com/iliagerman"),
         )
         invalid.forEach { shouldThrow<AndroidUpdateException> { ReleaseBundleDecoder.decode(it, fixture.manifest()) } }
         val invalidManifests = listOf(
@@ -120,9 +120,9 @@ private class Fixture {
     val version = "1.10.0"
     val apkName = "AndroidBridge-$version-android.apk"
     private val macName = "AndroidBridge-$version-macOS-arm64.dmg"
-    private fun url(name: String) = "https://github.com/germanilia/android-bridge/releases/download/v$version/$name"
+    private fun url(name: String) = "https://github.com/iliagerman/android-bridge/releases/download/v$version/$name"
 
-    fun release() = """{"tag_name":"v$version","draft":false,"prerelease":false,"html_url":"https://github.com/germanilia/android-bridge/releases/tag/v$version","assets":[
+    fun release() = """{"tag_name":"v$version","draft":false,"prerelease":false,"html_url":"https://github.com/iliagerman/android-bridge/releases/tag/v$version","assets":[
         {"name":"$apkName","size":3,"browser_download_url":"${url(apkName)}"},
         {"name":"$apkName.sha256","size":80,"browser_download_url":"${url("$apkName.sha256")}"},
         {"name":"$macName","size":3,"browser_download_url":"${url(macName)}"},

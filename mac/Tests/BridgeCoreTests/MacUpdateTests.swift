@@ -75,7 +75,7 @@ final class MacUpdateTests: XCTestCase {
             let invalid = release.replacingOccurrences(of: "\"\(flag)\":false", with: "\"\(flag)\":true")
             XCTAssertThrowsError(try ReleaseBundleDecoder.release(from: Data(invalid.utf8)))
         }
-        let base = "https://github.com/germanilia/android-bridge/releases/download/v\(version)/"
+        let base = "https://github.com/iliagerman/android-bridge/releases/download/v\(version)/"
         let duplicate = release.replacingOccurrences(of: "]}", with: ",{\"name\":\"release-manifest.json\",\"size\":100,\"browser_download_url\":\"\(base)release-manifest.json\"}]}")
         XCTAssertThrowsError(try ReleaseBundleDecoder.release(from: Data(duplicate.utf8)))
     }
@@ -161,13 +161,13 @@ final class MacUpdateTests: XCTestCase {
     private func fixtureBundle(version: String, size: Int64 = 12) throws -> ReleaseBundle {
         let semantic = try SemanticVersion(version)
         let name = "AndroidBridge-\(version)-macOS-arm64.dmg"
-        let base = "https://github.com/germanilia/android-bridge/releases/download/v\(version)/"
-        return ReleaseBundle(version: semantic, pageURL: URL(string: "https://github.com/germanilia/android-bridge/releases/tag/v\(version)")!, dmg: ReleaseAsset(name: name, size: size, url: URL(string: base + name)!), checksum: ReleaseAsset(name: name + ".sha256", size: 80, url: URL(string: base + name + ".sha256")!), sha256: String(repeating: "a", count: 64))
+        let base = "https://github.com/iliagerman/android-bridge/releases/download/v\(version)/"
+        return ReleaseBundle(version: semantic, pageURL: URL(string: "https://github.com/iliagerman/android-bridge/releases/tag/v\(version)")!, dmg: ReleaseAsset(name: name, size: size, url: URL(string: base + name)!), checksum: ReleaseAsset(name: name + ".sha256", size: 80, url: URL(string: base + name + ".sha256")!), sha256: String(repeating: "a", count: 64))
     }
 
     private func fixtureRelease(version: SemanticVersion) -> String {
         let name = "AndroidBridge-\(version)-macOS-arm64.dmg"
-        let base = "https://github.com/germanilia/android-bridge/releases/download/v\(version)/"
+        let base = "https://github.com/iliagerman/android-bridge/releases/download/v\(version)/"
         return "{\"tag_name\":\"v\(version)\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"release-manifest.json\",\"size\":100,\"browser_download_url\":\"\(base)release-manifest.json\"},{\"name\":\"\(name)\",\"size\":12,\"browser_download_url\":\"\(base)\(name)\"},{\"name\":\"\(name).sha256\",\"size\":80,\"browser_download_url\":\"\(base)\(name).sha256\"}]}"
     }
 

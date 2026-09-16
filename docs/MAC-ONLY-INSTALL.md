@@ -11,7 +11,7 @@ This setup records and transcribes meetings on a Mac and manages a local Second 
 
 ## Install the app
 
-1. Download [AndroidBridge for Apple Silicon](https://github.com/germanilia/android-bridge/releases/latest/download/AndroidBridge-macOS-arm64.dmg).
+1. Download [AndroidBridge for Apple Silicon](https://github.com/iliagerman/android-bridge/releases/latest/download/AndroidBridge-macOS-arm64.dmg).
 2. Open the DMG and drag `AndroidBridge.app` to Applications.
 3. Control-click `AndroidBridge.app`, choose **Open**, then confirm **Open**. The app is signed but not Apple-notarized. Do not disable Gatekeeper.
 4. In the setup wizard, choose **Mac only**.
@@ -19,7 +19,7 @@ This setup records and transcribes meetings on a Mac and manages a local Second 
 The command-line installer is also available. It installs the rolling build rather than the latest stable release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/germanilia/android-bridge/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iliagerman/android-bridge/main/install.sh | bash
 ```
 
 ## Choose what to install

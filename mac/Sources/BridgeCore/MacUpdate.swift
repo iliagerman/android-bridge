@@ -201,7 +201,7 @@ private enum GitHubUpdateSession {
 }
 
 public final class GitHubReleaseClient: ReleaseFetching {
-    public static let endpoint = URL(string: "https://api.github.com/repos/germanilia/android-bridge/releases/latest")!
+    public static let endpoint = URL(string: "https://api.github.com/repos/iliagerman/android-bridge/releases/latest")!
     private let session: URLSession
 
     public init(session: URLSession? = nil) { self.session = session ?? GitHubUpdateSession.make() }
@@ -227,7 +227,7 @@ public final class GitHubReleaseClient: ReleaseFetching {
     static func isAllowed(_ url: URL, api: Bool) -> Bool {
         guard GitHubUpdateSession.isClean(url, allowsQuery: false), let host = url.host else { return false }
         if api { return host == "api.github.com" && url == endpoint }
-        return host == "github.com" && url.path.hasPrefix("/germanilia/android-bridge/releases/download/")
+        return host == "github.com" && url.path.hasPrefix("/iliagerman/android-bridge/releases/download/")
     }
 
     static func isAllowedFinalURL(_ url: URL, api: Bool) -> Bool {
@@ -410,7 +410,7 @@ internal enum ReleaseBundleDecoder {
         let version = try SemanticVersion(String(release.tag_name.dropFirst()))
         let pairs = try release.assets.map { asset -> (String, ReleaseAsset) in
             guard asset.size > 0, GitHubReleaseClient.isAllowed(asset.browser_download_url, api: false),
-                  asset.browser_download_url.path == "/germanilia/android-bridge/releases/download/v\(version)/\(asset.name)" else { throw MacUpdateError.invalidAsset }
+                  asset.browser_download_url.path == "/iliagerman/android-bridge/releases/download/v\(version)/\(asset.name)" else { throw MacUpdateError.invalidAsset }
             return (asset.name, ReleaseAsset(name: asset.name, size: asset.size, url: asset.browser_download_url))
         }
         var assets: [String: ReleaseAsset] = [:]
@@ -435,7 +435,7 @@ internal enum ReleaseBundleDecoder {
               valid(manifest.macos, name: dmgName), valid(manifest.android, name: "AndroidBridge-\(version)-android.apk"),
               validHash(manifest.android.signerSha256), let dmg = release.assets[dmgName], dmg.size == manifest.macos.size,
               let checksum = release.assets["\(dmgName).sha256"] else { throw MacUpdateError.invalidManifest }
-        let page = URL(string: "https://github.com/germanilia/android-bridge/releases/tag/v\(version)")!
+        let page = URL(string: "https://github.com/iliagerman/android-bridge/releases/tag/v\(version)")!
         return ReleaseBundle(version: version, pageURL: page, dmg: dmg, checksum: checksum, sha256: manifest.macos.sha256)
     }
 

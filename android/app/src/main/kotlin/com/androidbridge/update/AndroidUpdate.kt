@@ -20,7 +20,7 @@ import java.util.UUID
 
 private val VERSION_PATTERN = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
 private val HASH_PATTERN = Regex("[0-9a-f]{64}")
-private const val REPOSITORY = "germanilia/android-bridge"
+private const val REPOSITORY = "iliagerman/android-bridge"
 private const val RELEASE_API = "https://api.github.com/repos/$REPOSITORY/releases/latest"
 
 class SemanticVersion private constructor(
