@@ -76,6 +76,7 @@ public final class LinkManager: ObservableObject {
     @Published public private(set) var phoneMeetingActive = false
     @Published public private(set) var calendarCandidates: [String: [MeetingCalendarEvent]] = [:]
     @Published public private(set) var calendarMessages: [String: String] = [:]
+    @Published public private(set) var calendarBrowseDay: [String: Date] = [:]
     @Published public private(set) var calendarAccessMessage = "Calendar access has not been checked."
     @Published public private(set) var availableCalendars: [MeetingCalendarDescriptor] = []
     @Published public private(set) var mainCalendarIdentifier = UserDefaults.standard.string(forKey: "meeting.mainCalendarIdentifier") ?? ""
@@ -1535,12 +1536,50 @@ public final class LinkManager: ObservableObject {
         }
     }
 
-    private func handleCalendarMatches(_ events: [MeetingCalendarEvent], for meeting: MeetingRecord) {
+    private func unassignedEvents(_ events: [MeetingCalendarEvent], excluding meeting: MeetingRecord) -> [MeetingCalendarEvent] {
         let assignedEvents = Set(meetingStore.listMeetings().filter { $0.id != meeting.id }.compactMap { record in
             record.calendarEvent.map { "\($0.id)|\($0.start.timeIntervalSince1970)" }
         })
-        let availableEvents = events.filter { !assignedEvents.contains("\($0.id)|\($0.start.timeIntervalSince1970)") }
+        return events.filter { !assignedEvents.contains("\($0.id)|\($0.start.timeIntervalSince1970)") }
+    }
+
+    /// Lists every calendar event on one day so an older recording can be matched by hand.
+    public func browseCalendarEvents(for meeting: MeetingRecord, day: Date) {
+        let dayStart = Calendar.current.startOfDay(for: day)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        let label = dayStart.formatted(date: .abbreviated, time: .omitted)
         DispatchQueue.main.async {
+            self.calendarBrowseDay[meeting.id] = dayStart
+            self.calendarMessages[meeting.id] = "Loading \(label)…"
+        }
+        let identifier = mainCalendarIdentifier.isEmpty ? nil : mainCalendarIdentifier
+        calendarService.events(from: dayStart, to: dayEnd, calendarIdentifier: identifier) { result in
+            switch result {
+            case .failure(let error): self.calendarFailure(error, meetingId: meeting.id)
+            case .success(let events):
+                let available = self.unassignedEvents(events, excluding: meeting)
+                DispatchQueue.main.async {
+                    self.calendarAccessMessage = "Calendar access is on."
+                    self.calendarCandidates[meeting.id] = available
+                    self.calendarMessages[meeting.id] = available.isEmpty
+                        ? "No free calendar events on \(label). Step to another day."
+                        : "\(available.count) calendar event(s) on \(label). Choose one or step to another day."
+                }
+            }
+        }
+    }
+
+    /// Moves the browsed day, so the user can walk backwards through past meetings.
+    public func stepCalendarBrowse(for meeting: MeetingRecord, days: Int) {
+        let base = calendarBrowseDay[meeting.id] ?? Calendar.current.startOfDay(for: meeting.date)
+        let next = Calendar.current.date(byAdding: .day, value: days, to: base) ?? base
+        browseCalendarEvents(for: meeting, day: next)
+    }
+
+    private func handleCalendarMatches(_ events: [MeetingCalendarEvent], for meeting: MeetingRecord) {
+        let availableEvents = unassignedEvents(events, excluding: meeting)
+        DispatchQueue.main.async {
+            self.calendarBrowseDay[meeting.id] = Calendar.current.startOfDay(for: meeting.date)
             self.calendarCandidates[meeting.id] = availableEvents
             if events.isEmpty {
                 self.calendarMessages[meeting.id] = "No overlapping calendar event found."
@@ -1584,6 +1623,7 @@ public final class LinkManager: ObservableObject {
                 self.refreshMeetings()
                 DispatchQueue.main.async {
                     self.calendarCandidates.removeValue(forKey: meeting.id)
+                    self.calendarBrowseDay.removeValue(forKey: meeting.id)
                     self.calendarMessages[meeting.id] = event == nil ? "Client details saved." : "Calendar meeting details saved."
                 }
             } catch {
@@ -1606,6 +1646,7 @@ public final class LinkManager: ObservableObject {
             self.refreshMeetings()
             DispatchQueue.main.async {
                 self.calendarCandidates.removeValue(forKey: meeting.id)
+                self.calendarBrowseDay.removeValue(forKey: meeting.id)
                 self.calendarMessages[meeting.id] = needsCustomer ? "Calendar details added. Choose a customer." : "Calendar details added."
                 if needsCustomer {
                     self.pendingCustomerEvents[meeting.id] = event
@@ -1686,6 +1727,7 @@ public final class LinkManager: ObservableObject {
 
     private func clearCalendarSelection(for meeting: MeetingRecord, message: String) {
         calendarCandidates.removeValue(forKey: meeting.id)
+        calendarBrowseDay.removeValue(forKey: meeting.id)
         calendarMessages[meeting.id] = message
         DispatchQueue.global(qos: .userInitiated).async {
             self.meetingStore.clearCalendarEvent(for: meeting)

@@ -902,11 +902,12 @@ struct MeetingPreview: View {
                         Text(message).font(.callout).foregroundStyle(.secondary)
                     }
                     let candidates = link.calendarCandidates[meeting.id] ?? []
+                    let browsedDay = link.calendarBrowseDay[meeting.id] ?? Calendar.current.startOfDay(for: meeting.date)
                     HStack {
                         if !candidates.isEmpty {
                             Menu("Choose calendar event") {
                                 ForEach(candidates) { event in
-                                    Button("\(event.title) — \(event.start.formatted(date: .omitted, time: .shortened))") {
+                                    Button("\(event.title) — \(event.start.formatted(date: .abbreviated, time: .shortened))") {
                                         link.selectCalendarEvent(event, for: meeting)
                                     }
                                 }
@@ -920,14 +921,29 @@ struct MeetingPreview: View {
                                 }
                                 Button("No calendar event") { link.dismissCalendarCandidates(for: meeting) }
                             }
-                        } else {
-                            Button { link.enrichMeetingFromCalendar(meeting) } label: {
-                                Label(meeting.calendarEvent == nil ? "Find Calendar Event" : "Refresh Calendar Match", systemImage: "calendar")
-                            }
+                        }
+                        Button { link.enrichMeetingFromCalendar(meeting) } label: {
+                            Label(meeting.calendarEvent == nil ? "Find Calendar Event" : "Refresh Calendar Match", systemImage: "calendar")
                         }
                         Button("Request Calendar Access") { link.requestCalendarAccess() }
                         Button("Calendar Settings") { link.openCalendarSettings() }
                     }
+                    HStack(spacing: 8) {
+                        Button { link.stepCalendarBrowse(for: meeting, days: -1) } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .help("Browse the previous day")
+                        Text(browsedDay.formatted(date: .abbreviated, time: .omitted))
+                            .font(.callout).monospacedDigit()
+                        Button { link.stepCalendarBrowse(for: meeting, days: 1) } label: {
+                            Image(systemName: "chevron.right")
+                        }
+                        .help("Browse the next day")
+                        Button("Show this day's events") { link.browseCalendarEvents(for: meeting, day: browsedDay) }
+                        Button("Recording day") { link.browseCalendarEvents(for: meeting, day: meeting.date) }
+                    }
+                    Text("Browsing lists past and already finished events too, not only the ones overlapping the recording.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 if !meeting.audioFiles.isEmpty {

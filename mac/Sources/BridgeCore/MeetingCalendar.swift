@@ -163,6 +163,25 @@ public final class MeetingCalendarService {
     }
 
     public func events(overlapping start: Date, end: Date, calendarIdentifier: String? = nil, tolerance: TimeInterval = 0, completion: @escaping (Result<[MeetingCalendarEvent], Error>) -> Void) {
+        fetch(start: start.addingTimeInterval(-tolerance), end: end.addingTimeInterval(tolerance), calendarIdentifier: calendarIdentifier) { result in
+            completion(result.map { MeetingCalendarMatcher.overlapping($0, meetingStart: start, meetingEnd: end, tolerance: tolerance) })
+        }
+    }
+
+    /// Every event inside the window, in calendar order, so the user can browse a day instead of relying on an overlap match.
+    public func events(from start: Date, to end: Date, calendarIdentifier: String? = nil, completion: @escaping (Result<[MeetingCalendarEvent], Error>) -> Void) {
+        fetch(start: start, end: end, calendarIdentifier: calendarIdentifier) { result in
+            completion(result.map { events in
+                events.sorted {
+                    if $0.start != $1.start { return $0.start < $1.start }
+                    if $0.title != $1.title { return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                    return $0.id < $1.id
+                }
+            })
+        }
+    }
+
+    private func fetch(start: Date, end: Date, calendarIdentifier: String?, completion: @escaping (Result<[MeetingCalendarEvent], Error>) -> Void) {
         requestAccess { result in
             switch result {
             case .failure(let error): completion(.failure(error))
@@ -177,9 +196,8 @@ public final class MeetingCalendarService {
                 } else {
                     calendars = nil
                 }
-                let predicate = self.store.predicateForEvents(withStart: start.addingTimeInterval(-tolerance), end: end.addingTimeInterval(tolerance), calendars: calendars)
-                let snapshots = self.store.events(matching: predicate).map(self.snapshot)
-                completion(.success(MeetingCalendarMatcher.overlapping(snapshots, meetingStart: start, meetingEnd: end, tolerance: tolerance)))
+                let predicate = self.store.predicateForEvents(withStart: start, end: end, calendars: calendars)
+                completion(.success(self.store.events(matching: predicate).map(self.snapshot)))
             }
         }
     }
