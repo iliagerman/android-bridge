@@ -181,8 +181,12 @@ public final class MeetingCustomerStore {
 
     private func brainCustomers() -> [String] {
         let root = fixedBrainRootURL ?? configuredBrainRoot()
-        let clients = root.appendingPathComponent("work/sela/meetings", isDirectory: true)
-        let directories = (try? fileManager.contentsOfDirectory(at: clients, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let roots = ["work/sela/meetings", "work/meetings"].map {
+            root.appendingPathComponent($0, isDirectory: true)
+        }
+        let directories = roots.flatMap {
+            (try? fileManager.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        }
         return directories.filter(\.hasDirectoryPath).compactMap { directory in
             guard let text = try? String(contentsOf: directory.appendingPathComponent("index.md"), encoding: .utf8) else { return nil }
             return text.split(separator: "\n").first(where: { $0.hasPrefix("# ") }).map { String($0.dropFirst(2)) }

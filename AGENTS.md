@@ -3,6 +3,10 @@
 Practical notes for AI agents working in this repo. These cover things that were
 slow or non-obvious to find. Keep entries factual and update them when they drift.
 
+## Installation work
+
+When installing or configuring Android Bridge for another user, read `docs/AGENT-INSTALLATION.md` completely before running commands. It defines setup questions, consent gates, Mac-only behavior, and completion checks.
+
 ## Where things live
 
 - `relay/` — Kotlin/Ktor relay server. Runs in Docker on the `homeserver` SSH host.

@@ -274,6 +274,10 @@ public final class SecondBrainStore {
     }
 
     private func run(_ arguments: [String], stdin: String? = nil) throws -> String {
+        try SecondBrainSkillManager.initializeBrainIfNeeded(
+            skillURL: scriptURL.deletingLastPathComponent().deletingLastPathComponent(),
+            rootURL: rootURL
+        )
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["python3", scriptURL.path] + arguments

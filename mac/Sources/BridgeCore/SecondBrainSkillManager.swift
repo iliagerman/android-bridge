@@ -24,8 +24,20 @@ public enum SecondBrainSkillManager {
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default
     ) throws -> URL {
-        if defaults.string(forKey: defaultsKey) != nil {
-            return configuredURL(defaults: defaults, fileManager: fileManager)
+        let legacy = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".agents/skills/second-brain", isDirectory: true)
+        if let configured = defaults.string(forKey: defaultsKey) {
+            let configuredURL = URL(fileURLWithPath: configured)
+            if fileManager.fileExists(atPath: configuredURL.appendingPathComponent("SKILL.md").path) {
+                return configuredURL
+            }
+            if configuredURL.standardizedFileURL != legacy.standardizedFileURL {
+                return configuredURL
+            }
+        }
+
+        if fileManager.fileExists(atPath: legacy.appendingPathComponent("SKILL.md").path) {
+            defaults.set(legacy.path, forKey: defaultsKey)
+            return legacy
         }
 
         let destination = installedURL(fileManager: fileManager)
@@ -40,6 +52,27 @@ public enum SecondBrainSkillManager {
 
     public static func bundledSkillText(bundle: Bundle = .main) throws -> String {
         try String(contentsOf: bundledURL(bundle: bundle).appendingPathComponent("SKILL.md"), encoding: .utf8)
+    }
+
+    public static func initializeBrainIfNeeded(skillURL: URL, rootURL: URL) throws {
+        let index = rootURL.appendingPathComponent("index.md")
+        guard !FileManager.default.fileExists(atPath: index.path) else { return }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", skillURL.appendingPathComponent("scripts/brain.py").path, "init"]
+        var environment = setupProcessEnvironment()
+        environment["BRAIN_ROOT"] = rootURL.path
+        process.environment = environment
+        let errors = Pipe()
+        process.standardOutput = Pipe()
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let detail = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "Second Brain initialization failed."
+            throw NSError(domain: "SecondBrainSkill", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: detail])
+        }
     }
 
     private static func bundledURL(bundle: Bundle) throws -> URL {

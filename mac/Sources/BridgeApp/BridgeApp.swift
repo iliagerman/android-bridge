@@ -1928,11 +1928,11 @@ struct SettingsTab: View {
             }
             Section("How pi integration works") {
                 Text("Each task can use Local Ollama or pi. Local Ollama is the default and uses the model name in the row, usually gemma4:e4b.")
-                Text("When pi is selected, Android Bridge invokes pi in non-interactive mode with the configured model and only the second-brain skill loaded:")
-                Text("<pi executable> --print --no-session --no-skills --skill <Second Brain skill> --model <model> <prompt>")
+                Text("Meeting tasks run without tools or skills. Second Brain tasks load only the configured Second Brain skill and allow its required bash tool:")
+                Text("<pi executable> --print --no-session --no-extensions --no-skills --tools bash --skill <Second Brain skill> --model <model> <prompt>")
                     .font(.system(.callout, design: .monospaced))
                     .textSelection(.enabled)
-                Text("Current pi-backed paths: meeting summarize/title/chat when enabled, Second Brain search when enabled, and Second Brain Q&A when enabled. CRUD itself writes through the second-brain CLI so indexes stay consistent.")
+                Text("The editable skill can run shell commands when a Second Brain task uses pi. Review skill changes before saving them. CRUD writes through brain.py so indexes stay consistent.")
                     .foregroundStyle(.secondary)
             }
         }

@@ -243,11 +243,30 @@ public final class LinkManager: ObservableObject {
         if started { return }
         started = true
         requestNotificationAuthorization()
-        startBrowser()
         startClipboardWatch()
         startAutoMeetingWatch()
-        setStatus(.discovering)
-        scheduleRelayFallback()
+        setPhoneFeaturesEnabled(UserDefaults.standard.string(forKey: "setup.mode") != "macOnly")
+    }
+
+    public func setPhoneFeaturesEnabled(_ enabled: Bool) {
+        queue.async {
+            if enabled {
+                self.browser?.cancel()
+                self.startBrowser()
+                self.setStatus(.discovering)
+                self.scheduleRelayFallback()
+                return
+            }
+            self.relayFallbackWorkItem?.cancel()
+            self.relayPolicy.suspend()
+            self.relayTransport.disconnect()
+            self.relayConnected = false
+            self.connection?.cancel()
+            self.browser?.cancel()
+            DispatchQueue.main.async { self.nearby = [] }
+            self.setStatus(.disconnected)
+            self.setRelayStatus("Disabled in Mac-only mode")
+        }
     }
 
     /// Observe the pasteboard for the opt-in Auto Sync mode. Manual Push Clipboard remains available.
@@ -400,6 +419,7 @@ public final class LinkManager: ObservableObject {
         queue.async {
             guard self.started else { return }
             self.sleeping = false
+            guard UserDefaults.standard.string(forKey: "setup.mode") != "macOnly" else { return }
             self.browser?.cancel()
             self.startBrowser()
             self.setStatus(.discovering)
@@ -423,8 +443,12 @@ public final class LinkManager: ObservableObject {
     }
 
     private func scheduleReconnect() {
+        guard UserDefaults.standard.string(forKey: "setup.mode") != "macOnly" else { return }
         queue.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, self.connection == nil, let p = self.lastPeer else { return }
+            guard let self,
+                  UserDefaults.standard.string(forKey: "setup.mode") != "macOnly",
+                  self.connection == nil,
+                  let p = self.lastPeer else { return }
             // The phone's port changes across app restarts — prefer the freshest
             // discovered endpoint over the cached one, or dialing hangs forever.
             let fresh = self.nearby.first { $0.fingerprint == p.fingerprint } ?? p
@@ -643,6 +667,7 @@ public final class LinkManager: ObservableObject {
     private func scheduleRelayFallback() {
         queue.async {
             self.relayFallbackWorkItem?.cancel()
+            guard UserDefaults.standard.string(forKey: "setup.mode") != "macOnly" else { return }
             let enabled = self.relaySettings.enabled && self.relaySettings.isEnrolled && !self.sleeping
             let plan = self.relayPolicy.begin(relayEnabled: enabled)
             guard let delay = plan.fallbackDelay else { return }

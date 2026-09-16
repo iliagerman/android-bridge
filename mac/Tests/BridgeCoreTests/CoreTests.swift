@@ -458,6 +458,16 @@ final class PiInvocationTests: XCTestCase {
         XCTAssertTrue(arguments.contains("--no-tools"))
         XCTAssertFalse(arguments.contains("--skill"))
     }
+
+    func testSecondBrainArgumentsLoadOnlySkillAndBash() {
+        let arguments = PiInvocation.arguments(model: "zai/glm-5.2", prompt: "search", skillPath: "/tmp/second-brain")
+        XCTAssertTrue(arguments.contains("--no-extensions"))
+        XCTAssertTrue(arguments.contains("--no-skills"))
+        XCTAssertTrue(arguments.contains("--skill"))
+        XCTAssertTrue(arguments.contains("/tmp/second-brain"))
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--tools")! + 1], "bash")
+        XCTAssertFalse(arguments.contains("--no-tools"))
+    }
 }
 
 final class PiModelCatalogTests: XCTestCase {

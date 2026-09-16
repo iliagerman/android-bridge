@@ -113,6 +113,8 @@ aidlc-docs/    Design notes and implementation records
 
 ### Install on macOS
 
+For Meetings and Second Brain without a phone, follow the [Mac-only installation guide](docs/MAC-ONLY-INSTALL.md). Agents must also follow the [installation runbook](docs/AGENT-INSTALLATION.md).
+
 [Download AndroidBridge for Apple Silicon macOS 13+](https://github.com/germanilia/android-bridge/releases/latest/download/AndroidBridge-macOS-arm64.dmg).
 
 Open the DMG, drag `AndroidBridge.app` to Applications, then Control-click the app and choose **Open**
@@ -126,8 +128,8 @@ If you installed the old debug-signed `AndroidBridge-latest.apk` before version 
 upgrade it to the release-signed build. Uninstall that old copy once, then install the stable APK. This
 one-time migration removes the old app's local settings and pairing; later stable releases preserve data.
 
-On first launch, the native Setup Wizard detects Homebrew, ffmpeg, Python/MLX Whisper, Ollama,
-`gemma4:e4b`, Node.js, and pi. Existing valid installations are marked complete automatically. For
+On first launch, choose Mac-only or Mac + Android setup. The native Setup Wizard detects Homebrew, ffmpeg, Python/MLX Whisper, Ollama,
+`gemma4:e4b`, Node.js, and pi. The bundled Second Brain skill is copied to an editable user folder. Existing valid installations are marked complete automatically. For
 each missing tool, the wizard explains the command and asks separately before installing it; nothing
 is silently installed or replaced. The wizard also guides macOS permissions, provides a QR code and
 download link for the Android APK, verifies phone connection, and remains available from Settings
@@ -262,15 +264,15 @@ Android Bridge uses Ollama by default for Summarize, Chat, Second Brain Search, 
 
 ### Optional pi integration
 
-Install pi and make sure it is on `PATH` for GUI apps. When pi is selected for Second Brain actions, Android Bridge runs pi with only the second-brain skill loaded:
+Install pi and make sure it is on `PATH` for GUI apps. Android Bridge copies its embedded Second Brain skill to `~/Library/Application Support/AndroidBridge/second-brain-skill` and loads it for pi-backed Second Brain tasks:
 
 ```bash
 npm install -g @earendil-works/pi-coding-agent
 pi --version
-pi --no-skills --skill ~/.agents/skills/second-brain "list my note clusters"
+pi --no-extensions --no-skills --tools bash --skill "$HOME/Library/Application Support/AndroidBridge/second-brain-skill" "list my note clusters"
 ```
 
-If the app is launched from Finder and cannot find `pi`, launch it from a shell that has the correct `PATH` or add the pi binary directory to the environment used by the app.
+The skill is editable in the app. Because it can use `bash`, review skill changes before saving them. If the app is launched from Finder and cannot find `pi`, launch it from a shell that has the correct `PATH` or add the pi binary directory to the environment used by the app.
 
 ### Optional Second Brain configuration
 

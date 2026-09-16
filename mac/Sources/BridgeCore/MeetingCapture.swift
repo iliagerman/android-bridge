@@ -801,17 +801,21 @@ public final class MeetingStore {
         let configured = UserDefaults.standard.string(forKey: "secondBrain.root")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let env = ProcessInfo.processInfo.environment["BRAIN_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let brainRoot = URL(fileURLWithPath: configured?.isEmpty == false ? configured! : (env?.isEmpty == false ? env! : home.appendingPathComponent("second_brain").path))
-        let meetings = brainRoot.appendingPathComponent("work/sela/meetings", isDirectory: true)
+        let meetingRoots = ["work/sela/meetings", "work/meetings"].map {
+            brainRoot.appendingPathComponent($0, isDirectory: true)
+        }
         let stamp = brainNoteStamp.string(from: date)
-        let files = fm.enumerator(at: meetings, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? []
+        let files = meetingRoots.flatMap {
+            fm.enumerator(at: $0, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? []
+        }
         for file in files where file.pathExtension == "md" && file.lastPathComponent != "index.md" {
             let rel = String(file.path.dropFirst(brainRoot.path.count + 1))
             let parts = rel.split(separator: "/")
-            guard parts.count >= 5, let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            guard parts.count >= 4, let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             if text.contains(stamp), text.contains(title) {
                 let line = text.components(separatedBy: "\n").first { $0.hasPrefix("Meeting with ") }
                 let company = line.map { String(String($0.dropFirst("Meeting with ".count)).components(separatedBy: ", captured").first ?? "") }
-                return (company ?? String(parts[3]), rel)
+                return (company ?? String(parts[parts.count - 2]), rel)
             }
         }
         return nil
@@ -971,8 +975,14 @@ public enum LLMFeature: String, CaseIterable, Identifiable {
 }
 
 public enum PiInvocation {
-    public static func arguments(model: String, prompt: String) -> [String] {
-        ["--print", "--no-session", "--no-extensions", "--no-tools", "--no-skills", "--model", model, prompt]
+    public static func arguments(model: String, prompt: String, skillPath: String? = nil) -> [String] {
+        var arguments = ["--print", "--no-session", "--no-extensions", "--no-skills"]
+        if let skillPath {
+            arguments += ["--tools", "bash", "--skill", skillPath]
+        } else {
+            arguments.append("--no-tools")
+        }
+        return arguments + ["--model", model, prompt]
     }
 }
 
@@ -1085,8 +1095,11 @@ public struct LLMService {
     public func run(_ prompt: String, feature override: LLMFeature? = nil) -> String? {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !CommandLine.arguments.contains(where: { $0.contains("xctest") }) else { return nil }
-        let config = LLMConfig.config(for: override ?? feature)
-        return config.usePi ? runPi(trimmed, model: config.model) : runOllama(trimmed, model: config.model)
+        let selectedFeature = override ?? feature
+        let config = LLMConfig.config(for: selectedFeature)
+        return config.usePi
+            ? runPi(trimmed, model: config.model, feature: selectedFeature)
+            : runOllama(trimmed, model: config.model)
     }
 
     private func runOllama(_ prompt: String, model: String) -> String? {
@@ -1105,12 +1118,15 @@ public struct LLMService {
         return output.flatMap(clean)
     }
 
-    private func runPi(_ prompt: String, model: String) -> String? {
+    private func runPi(_ prompt: String, model: String, feature: LLMFeature) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.environment = environmentWithHomebrewPath()
+        var environment = environmentWithHomebrewPath()
+        environment["BRAIN_ROOT"] = SecondBrainStore().rootURL.path
+        process.environment = environment
         let pi = UserDefaults.standard.string(forKey: "pi.executable")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        process.arguments = [pi?.isEmpty == false ? pi! : "pi"] + PiInvocation.arguments(model: model, prompt: prompt)
+        let skillPath = feature.rawValue.hasPrefix("Second Brain") ? SecondBrainSkillManager.configuredURL().path : nil
+        process.arguments = [pi?.isEmpty == false ? pi! : "pi"] + PiInvocation.arguments(model: model, prompt: prompt, skillPath: skillPath)
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()

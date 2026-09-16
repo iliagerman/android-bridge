@@ -5,7 +5,7 @@ Walks every note via the storage layer (local or S3 — it doesn't care), scores
 the query against each note's title, breadcrumb path, and body using rapidfuzz,
 and returns the best matches with a snippet of the line that matched.
 
-Requires: `pip install rapidfuzz`.
+Uses rapidfuzz when installed and falls back to Python's standard library.
 """
 
 from __future__ import annotations
@@ -14,11 +14,30 @@ import re
 
 try:
     from rapidfuzz import fuzz
-except ImportError:  # pragma: no cover - dependency guard
-    import sys
-    print("fuzzy: rapidfuzz is not installed. Run `pip install rapidfuzz`.",
-          file=sys.stderr)
-    raise
+except ImportError:  # pragma: no cover - exercised on clean user machines
+    from difflib import SequenceMatcher
+
+    class _FallbackFuzz:
+        @staticmethod
+        def _ratio(left: str, right: str) -> float:
+            return SequenceMatcher(None, left.lower(), right.lower()).ratio() * 100
+
+        @classmethod
+        def WRatio(cls, left: str, right: str) -> float:
+            return cls._ratio(left, right)
+
+        @classmethod
+        def token_set_ratio(cls, left: str, right: str) -> float:
+            return cls._ratio(" ".join(sorted(set(left.split()))), " ".join(sorted(set(right.split()))))
+
+        @classmethod
+        def partial_ratio(cls, left: str, right: str) -> float:
+            short, long = sorted((left, right), key=len)
+            if short.lower() in long.lower():
+                return 100.0
+            return max((cls._ratio(short, long[index:index + len(short)]) for index in range(max(1, len(long) - len(short) + 1))), default=0.0)
+
+    fuzz = _FallbackFuzz()
 
 from storage import Storage
 

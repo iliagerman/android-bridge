@@ -3,7 +3,8 @@ import Foundation
 /// Exports a meeting note into the local second brain (default ~/second_brain,
 /// overridable via BRAIN_ROOT). Writes go through the second-brain skill's
 /// brain.py CLI so every cluster index.md stays linked. Notes land under
-/// work/sela/meetings/<client-slug>/, with meeting photos stored as attachments.
+/// work/meetings/<client-slug>/, with meeting photos stored as attachments.
+/// Existing brains using work/sela/meetings keep that legacy location.
 public struct SecondBrainExporter {
     public struct TransferError: LocalizedError {
         public let message: String
@@ -28,7 +29,7 @@ public struct SecondBrainExporter {
     public func canonicalClientName(_ client: String) -> String {
         let trimmed = client.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return trimmed }
-        let index = "\(brainRoot)/work/sela/meetings/\(slug(trimmed))/index.md"
+        let index = "\(brainRoot)/\(meetingsParent)/\(slug(trimmed))/index.md"
         guard let text = try? String(contentsOfFile: index, encoding: .utf8) else { return trimmed }
         let title = text.components(separatedBy: .newlines)
             .first { $0.hasPrefix("# ") }?
@@ -42,13 +43,21 @@ public struct SecondBrainExporter {
         guard fm.isReadableFile(atPath: scriptURL.path) else {
             throw TransferError(message: "brain.py not found at \(scriptURL.path)")
         }
+        try SecondBrainSkillManager.initializeBrainIfNeeded(
+            skillURL: scriptURL.deletingLastPathComponent().deletingLastPathComponent(),
+            rootURL: URL(fileURLWithPath: brainRoot)
+        )
         let clientName = canonicalClientName(client)
         guard !clientName.isEmpty else { throw TransferError(message: "Client name is empty") }
 
-        let chain: [(slug: String, title: String, desc: String)] = [
+        var chain: [(slug: String, title: String, desc: String)] = [
             ("work", "Work", "Work-related subjects."),
-            ("sela", "Sela", "Sela consulting work."),
-            ("meetings", "Meetings", "Client meeting notes captured with Android Bridge."),
+        ]
+        if meetingsParent == "work/sela/meetings" {
+            chain.append(("sela", "Sela", "Sela consulting work."))
+        }
+        chain += [
+            ("meetings", "Meetings", "Meeting notes captured with Android Bridge."),
             (slug(clientName), clientName, "Meetings with \(clientName)."),
         ]
         var parent = ""
@@ -77,6 +86,10 @@ public struct SecondBrainExporter {
             throw TransferError(message: "brain.py did not create the note at \(notePath)")
         }
         return notePath
+    }
+
+    private var meetingsParent: String {
+        fm.fileExists(atPath: "\(brainRoot)/work/sela/meetings") ? "work/sela/meetings" : "work/meetings"
     }
 
     private func noteBody(_ meeting: MeetingRecord, clientName: String) -> String {

@@ -8,8 +8,8 @@ requires:
   env:
     - name: BRAIN_ROOT
       required: false
-      prompt: "Absolute path to the brain. Leave empty to use the default $HOME/second_brain. For the homeserver deployment, use /home/ilia/second_brain. S3 URIs are also supported (e.g. s3://my-bucket/brain)."
-      example: "/home/ilia/second_brain"
+      prompt: "Absolute path to the brain. Leave empty to use the default $HOME/second_brain. S3 URIs are also supported (e.g. s3://my-bucket/brain)."
+      example: "/Users/you/second_brain"
 ---
 
 # second-brain
@@ -107,7 +107,8 @@ delivery.
 ## Setup
 
 ```bash
-export BRAIN_ROOT="$HOME/second_brain"      # optional; this is the default. Homeserver: /home/ilia/second_brain
-pip install -r requirements.txt              # rapidfuzz (search) + boto3 (only for s3://)
+export BRAIN_ROOT="$HOME/second_brain"      # optional; this is the default
+# Optional: faster fuzzy search and S3 support
+pip install -r requirements.txt
 python3 scripts/brain.py init                # once
 ```

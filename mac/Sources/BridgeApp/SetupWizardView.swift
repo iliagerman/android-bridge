@@ -141,7 +141,11 @@ struct SetupWizardView: View {
             }.padding()
         }
         .frame(minWidth: 760, minHeight: 620)
-        .onAppear { refreshNotificationPermission() }
+        .onAppear {
+            refreshNotificationPermission()
+            link.setPhoneFeaturesEnabled(includesAndroid)
+        }
+        .onChange(of: setupMode) { _ in link.setPhoneFeaturesEnabled(includesAndroid) }
         .confirmationDialog("Install \(model.pendingConfirmation?.name ?? "dependency")?", isPresented: Binding(
             get: { model.pendingConfirmation != nil },
             set: { if !$0 { model.pendingConfirmation = nil } }

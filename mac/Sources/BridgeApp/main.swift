@@ -33,6 +33,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "setup.mode") == nil {
+            defaults.set(defaults.bool(forKey: "setupWizard.seen") ? "macAndAndroid" : "macOnly", forKey: "setup.mode")
+        }
         do {
             try SecondBrainSkillManager.installBundledSkillIfNeeded()
         } catch {
