@@ -86,14 +86,16 @@ public final class TrustedPresenceController: ObservableObject {
         ScreenLockControl.setAwakeHold(plan.holdAwake)
         isHoldingAwake = ScreenLockControl.isHoldingAwake
 
-        let current = ScreenLockControl.requiresPassword()
+        // App ownership is enough to decide the next transition. Querying `sysadminctl status`
+        // here used a full CPU core on every 20-second presence poll.
+        let appDisabledIt = appDisabledLockPassword
         let action = TrustedPresence.lockAction(
             plan: plan,
             featureEnabled: settings.disableLockPassword,
-            currentlyRequiresPassword: current,
-            appDisabledIt: appDisabledLockPassword
+            currentlyRequiresPassword: !appDisabledIt,
+            appDisabledIt: appDisabledIt
         )
-        passwordRequired = current
+        passwordRequired = !appDisabledIt
         guard let action else {
             // Nothing to change means nothing is wrong. Without this, an error raised once —
             // "no login password saved", say — outlived the thing that caused it and sat on
@@ -105,7 +107,7 @@ public final class TrustedPresenceController: ObservableObject {
         do {
             try ScreenLockControl.setPasswordRequired(action == .restore)
             appDisabledLockPassword = (action == .disable)
-            passwordRequired = ScreenLockControl.requiresPassword()
+            passwordRequired = (action == .restore)
             lastError = nil
         } catch {
             lastError = error.localizedDescription

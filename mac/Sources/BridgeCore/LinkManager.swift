@@ -24,6 +24,16 @@ public struct ReceivedFile: Identifiable, Equatable {
     public let receivedAt: Date
 }
 
+public struct MeetingCalendarReview: Equatable {
+    public let meeting: MeetingRecord
+    public let events: [MeetingCalendarEvent]
+
+    public init(meeting: MeetingRecord, events: [MeetingCalendarEvent]) {
+        self.meeting = meeting
+        self.events = events
+    }
+}
+
 /// TLS server over Bonjour. Android connects as a pinned TLS client, so clipboard/files/call metadata
 /// are encrypted on the LAN. This is server-authenticated TLS; full client-certificate mTLS is future hardening.
 public final class LinkManager: ObservableObject {
@@ -75,6 +85,7 @@ public final class LinkManager: ObservableObject {
     @Published public private(set) var customerStatus = "Customer catalog not loaded."
     private var pendingCustomerEvents: [String: MeetingCalendarEvent] = [:]
     private var zoomAutoMeetingActive = false
+    private var autoMeetingMissingSince: Date?
     private let brainStore = SecondBrainStore()
     private let customerStore = MeetingCustomerStore()
     private let meetingContentMirror = MeetingContentMirror()
@@ -85,6 +96,8 @@ public final class LinkManager: ObservableObject {
     public let incomingCallSubject = PassthroughSubject<(number: String, name: String), Never>()
     /// Call lifecycle transition ("active"/"ended") — the app swaps to an in-call panel or dismisses.
     public let callStateSubject = PassthroughSubject<(state: String, number: String, name: String), Never>()
+    /// A finalized recording awaiting explicit calendar assignment.
+    public let calendarReviewSubject = PassthroughSubject<MeetingCalendarReview, Never>()
     /// The call currently on screen — set on ring (incoming) and on dial (outgoing); the source of
     /// truth for the in-call panel, since OFFHOOK/IDLE transitions carry no reliable number.
     private var currentCallNumber = ""
@@ -254,13 +267,19 @@ public final class LinkManager: ObservableObject {
 
     private func pollVideoMeeting() {
         guard let app = Self.activeMeetingApp() else {
-            if zoomAutoMeetingActive {
+            guard zoomAutoMeetingActive else { return }
+            if autoMeetingMissingSince == nil {
+                autoMeetingMissingSince = Date()
+                dbg("AUTO_MEETING signal missing; waiting")
+            } else if Date().timeIntervalSince(autoMeetingMissingSince!) >= 60 {
                 dbg("AUTO_MEETING ended")
                 zoomAutoMeetingActive = false
+                autoMeetingMissingSince = nil
                 if macMeetingActive { stopMeetingOnMac() }
             }
             return
         }
+        autoMeetingMissingSince = nil
         if !macMeetingActive {
             dbg("AUTO_MEETING detected app=\(app)")
             zoomAutoMeetingActive = true
@@ -1492,18 +1511,61 @@ public final class LinkManager: ObservableObject {
     }
 
     private func handleCalendarMatches(_ events: [MeetingCalendarEvent], for meeting: MeetingRecord) {
-        if events.count == 1 {
-            applyCalendarEvent(events[0], to: meeting)
-            return
-        }
+        let assignedEvents = Set(meetingStore.listMeetings().filter { $0.id != meeting.id }.compactMap { record in
+            record.calendarEvent.map { "\($0.id)|\($0.start.timeIntervalSince1970)" }
+        })
+        let availableEvents = events.filter { !assignedEvents.contains("\($0.id)|\($0.start.timeIntervalSince1970)") }
         DispatchQueue.main.async {
-            self.calendarCandidates[meeting.id] = events
-            self.calendarMessages[meeting.id] = events.isEmpty ? "No overlapping calendar event found." : "Choose one of \(events.count) matching events or enter details manually."
+            self.calendarCandidates[meeting.id] = availableEvents
+            if events.isEmpty {
+                self.calendarMessages[meeting.id] = "No overlapping calendar event found."
+            } else if availableEvents.isEmpty {
+                self.calendarMessages[meeting.id] = "The overlapping calendar event is already assigned to another recording."
+            } else {
+                self.calendarMessages[meeting.id] = "Choose a calendar event or keep this recording unassigned."
+            }
+            self.calendarReviewSubject.send(MeetingCalendarReview(meeting: meeting, events: availableEvents))
         }
     }
 
     public func selectCalendarEvent(_ event: MeetingCalendarEvent, for meeting: MeetingRecord) {
         applyCalendarEvent(event, to: meeting)
+    }
+
+    public func saveMeetingReview(event: MeetingCalendarEvent?, customer: String, for meeting: MeetingRecord) {
+        let customerName = customer.trimmingCharacters(in: .whitespacesAndNewlines)
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let event {
+                guard self.meetingStore.setCalendarEvent(event, for: meeting) else {
+                    DispatchQueue.main.async { self.calendarMessages[meeting.id] = "Could not save calendar details. Try again." }
+                    self.postNotification(title: "Calendar meeting not saved", body: "Could not save calendar details. Try again.")
+                    return
+                }
+                if !self.meetingStore.hasTitleOverride(meeting) {
+                    self.meetingStore.setTitleOverride(meeting, to: event.title)
+                }
+            } else {
+                self.meetingStore.clearCalendarEvent(for: meeting)
+            }
+
+            do {
+                if customerName.isEmpty {
+                    self.meetingStore.setCompany(meeting, to: "")
+                } else {
+                    let canonical = try self.canonicalCustomer(customerName)
+                    self.meetingStore.setCompany(meeting, to: canonical)
+                    if let event { try self.customerStore.remember(event: event, customer: canonical) }
+                }
+                self.refreshMeetings()
+                DispatchQueue.main.async {
+                    self.calendarCandidates.removeValue(forKey: meeting.id)
+                    self.calendarMessages[meeting.id] = event == nil ? "Client details saved." : "Calendar meeting details saved."
+                }
+            } catch {
+                DispatchQueue.main.async { self.customerStatus = error.localizedDescription }
+                self.postNotification(title: "Client not saved", body: error.localizedDescription)
+            }
+        }
     }
 
     private func applyCalendarEvent(_ event: MeetingCalendarEvent, to meeting: MeetingRecord) {
@@ -1598,10 +1660,12 @@ public final class LinkManager: ObservableObject {
     }
 
     private func clearCalendarSelection(for meeting: MeetingRecord, message: String) {
-        meetingStore.clearCalendarEvent(for: meeting)
         calendarCandidates.removeValue(forKey: meeting.id)
         calendarMessages[meeting.id] = message
-        refreshMeetings()
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.meetingStore.clearCalendarEvent(for: meeting)
+            self.refreshMeetings()
+        }
     }
 
     public func retryMeetingFinalization(_ meeting: MeetingRecord) {

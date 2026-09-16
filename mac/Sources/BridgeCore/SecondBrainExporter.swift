@@ -16,8 +16,7 @@ public struct SecondBrainExporter {
 
     public init() {
         let home = fm.homeDirectoryForCurrentUser
-        let skill = UserDefaults.standard.string(forKey: "pi.secondBrainSkill")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        scriptURL = URL(fileURLWithPath: skill?.isEmpty == false ? skill! : home.appendingPathComponent(".agents/skills/second-brain").path).appendingPathComponent("scripts/brain.py")
+        scriptURL = SecondBrainSkillManager.configuredURL().appendingPathComponent("scripts/brain.py")
         let configured = UserDefaults.standard.string(forKey: "secondBrain.root")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let env = ProcessInfo.processInfo.environment["BRAIN_ROOT"]?.trimmingCharacters(in: .whitespaces)
         brainRoot = (configured?.isEmpty == false ? configured! : (env?.isEmpty == false ? env! : home.appendingPathComponent("second_brain").path))

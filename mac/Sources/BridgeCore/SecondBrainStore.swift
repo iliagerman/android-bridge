@@ -51,10 +51,7 @@ public final class SecondBrainStore {
     }
 
     private var scriptURL: URL {
-        let home = fm.homeDirectoryForCurrentUser
-        let configured = UserDefaults.standard.string(forKey: "pi.secondBrainSkill")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let root = configured?.isEmpty == false ? configured! : home.appendingPathComponent(".agents/skills/second-brain").path
-        return URL(fileURLWithPath: root).appendingPathComponent("scripts/brain.py")
+        SecondBrainSkillManager.configuredURL().appendingPathComponent("scripts/brain.py")
     }
 
     public var rootURL: URL {

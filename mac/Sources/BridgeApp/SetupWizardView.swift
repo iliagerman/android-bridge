@@ -94,8 +94,14 @@ struct SetupWizardView: View {
     @ObservedObject private var ui = AppUIState.shared
     @State private var page = 0
     @State private var notificationsGranted = false
+    @AppStorage("setup.mode") private var setupMode = "macOnly"
 
-    private let pages = ["Welcome", "Dependencies", "Permissions", "Android phone", "Ready"]
+    private var includesAndroid: Bool { setupMode == "macAndAndroid" }
+    private var pages: [String] {
+        includesAndroid
+            ? ["Welcome", "Dependencies", "Permissions", "Android phone", "Ready"]
+            : ["Welcome", "Dependencies", "Permissions", "Ready"]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,7 +121,7 @@ struct SetupWizardView: View {
                 case 0: welcome
                 case 1: dependencies
                 case 2: permissions
-                case 3: androidPhone
+                case 3 where includesAndroid: androidPhone
                 default: readiness
                 }
             }
@@ -151,9 +157,19 @@ struct SetupWizardView: View {
 
     private var welcome: some View {
         VStack(spacing: 18) {
-            Image(systemName: "arrow.left.arrow.right.circle.fill").font(.system(size: 72)).foregroundStyle(.blue)
-            Text("Set up your Mac and Android phone").font(.largeTitle).bold()
-            Text("Existing tools are detected automatically. Android Bridge asks before installing each missing dependency and never replaces a valid installation unless you choose Repair.")
+            Image(systemName: "waveform.and.mic").font(.system(size: 72)).foregroundStyle(.blue)
+            Text("Choose how you will use Android Bridge").font(.largeTitle).bold()
+            Picker("Setup mode", selection: $setupMode) {
+                Text("Mac only").tag("macOnly")
+                Text("Mac + Android phone").tag("macAndAndroid")
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 460)
+            Text(includesAndroid
+                 ? "Set up Meetings, Second Brain, and phone continuity features."
+                 : "Set up local meeting recording, transcription, summaries, and Second Brain. No Android app or phone is required.")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 560)
+            Text("Existing tools are detected automatically. Every third-party installation requires separate approval.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 560)
         }.padding(40)
     }
@@ -167,6 +183,16 @@ struct SetupWizardView: View {
             }
             ScrollView {
                 VStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).frame(width: 24)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Second Brain skill").font(.headline)
+                            Text("Embedded in the app and copied to an editable user folder on first launch.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(10).background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     ForEach(model.dependencies) { dependency in dependencyRow(dependency) }
                 }
             }
@@ -199,10 +225,12 @@ struct SetupWizardView: View {
         Form {
             Section("macOS permissions") {
                 permissionRow("Microphone", granted: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized, action: requestMicrophone)
-                permissionRow("Accessibility", granted: AXIsProcessTrusted(), action: { openSettings("Privacy_Accessibility") })
                 permissionRow("Screen & System Audio", granted: CGPreflightScreenCaptureAccess(), action: requestScreenCapture)
                 permissionRow("Notifications", granted: notificationsGranted, action: { openSettings("Notifications") })
-                Text("Local Network permission is requested by macOS when Android Bridge first discovers your phone.").font(.caption).foregroundStyle(.secondary)
+                if includesAndroid {
+                    permissionRow("Accessibility", granted: AXIsProcessTrusted(), action: { openSettings("Privacy_Accessibility") })
+                    Text("Local Network permission is requested by macOS when Android Bridge first discovers your phone.").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }.formStyle(.grouped).padding()
     }
@@ -235,8 +263,13 @@ struct SetupWizardView: View {
                     .foregroundStyle(isInstalled(model.states[dependency.id]) ? .green : .secondary)
             }
             Divider()
-            Label(link.status == .connected ? "Android phone connected" : "Android phone not connected", systemImage: link.status == .connected ? "checkmark.circle.fill" : "iphone")
-            Text("You can finish now and return to Setup from Settings at any time. Core Bridge features remain available when optional AI tools are skipped.").foregroundStyle(.secondary)
+            if includesAndroid {
+                Label(link.status == .connected ? "Android phone connected" : "Android phone not connected", systemImage: link.status == .connected ? "checkmark.circle.fill" : "iphone")
+            } else {
+                Label("Mac-only setup selected. Android is not required.", systemImage: "laptopcomputer")
+                    .foregroundStyle(.green)
+            }
+            Text("You can finish now and return to Setup from Settings at any time. Transcription needs ffmpeg, Python, and MLX Whisper. Summaries and Q&A need either Ollama or pi.").foregroundStyle(.secondary)
         }.padding(30).frame(maxWidth: .infinity, alignment: .leading)
     }
 

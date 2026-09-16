@@ -409,6 +409,71 @@ struct MeetingCaptureTab: View {
     }
 }
 
+struct MeetingCalendarReviewView: View {
+    let review: MeetingCalendarReview
+    let customers: [String]
+    let onDismiss: () -> Void
+    let onSave: (MeetingCalendarEvent?, String) -> Void
+    @State private var selectedEventIndex: Int
+    @State private var customer: String
+
+    init(review: MeetingCalendarReview, customers: [String], onDismiss: @escaping () -> Void, onSave: @escaping (MeetingCalendarEvent?, String) -> Void) {
+        self.review = review
+        self.customers = customers
+        self.onDismiss = onDismiss
+        self.onSave = onSave
+        _selectedEventIndex = State(initialValue: review.events.isEmpty ? -1 : 0)
+        _customer = State(initialValue: review.meeting.company)
+    }
+
+    private var selectedEvent: MeetingCalendarEvent? {
+        selectedEventIndex < 0 ? nil : review.events[selectedEventIndex]
+    }
+
+    private var hasSelection: Bool {
+        selectedEvent != nil || !customer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Recording finished", systemImage: "waveform.badge.checkmark")
+                .font(.title2).bold().foregroundStyle(.tint)
+            Text(review.meeting.title).font(.headline).lineLimit(2)
+            Text(review.meeting.date.formatted(date: .abbreviated, time: .shortened))
+                .foregroundStyle(.secondary)
+
+            Picker("Calendar meeting", selection: $selectedEventIndex) {
+                Text("No calendar meeting").tag(-1)
+                ForEach(review.events.indices, id: \.self) { index in
+                    let event = review.events[index]
+                    Text("\(event.title) · \(event.start.formatted(date: .omitted, time: .shortened))")
+                        .tag(index)
+                }
+            }
+            if review.events.isEmpty {
+                Text("No unassigned overlapping calendar meeting was found.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Client").frame(width: 115, alignment: .trailing)
+                CustomerPickerField(value: $customer, customers: customers)
+            }
+
+            Spacer()
+            HStack {
+                Button("Later") { onDismiss() }
+                Spacer()
+                Button("Save meeting details") { onSave(selectedEvent, customer) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!hasSelection)
+            }
+        }
+        .padding(24)
+        .frame(width: 520, height: 330)
+    }
+}
+
 struct CustomerPickerField: View {
     @Binding var value: String
     let customers: [String]
@@ -627,19 +692,15 @@ struct ProcessingStateLabel: View {
     }
 }
 
-/// Small breathing dot used for "recording" and "connecting" states.
+/// Status dot used for "recording" and "connecting" states.
 struct PulsingDot: View {
     var color: Color = .red
-    @State private var on = false
+
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 10, height: 10)
-            .scaleEffect(on ? 1.0 : 0.7)
-            .opacity(on ? 1 : 0.5)
-            .shadow(color: color.opacity(0.6), radius: on ? 4 : 1)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
+            .shadow(color: color.opacity(0.6), radius: 3)
     }
 }
 
@@ -683,8 +744,7 @@ struct MeetingPreview: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 meetingToolbar
                     .padding(.horizontal)
                     .padding(.top, 10)
@@ -923,11 +983,10 @@ struct MeetingPreview: View {
 
             }
                     .padding()
-                    .frame(minWidth: proxy.size.width, maxWidth: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
-        }
-        .frame(minWidth: 560, maxWidth: .infinity, alignment: .topLeading)
+        .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .layoutPriority(1)
         .task(id: noteIdentity + noteTab) {
             if noteTab == "Full note" { await loadMarkdown() }
@@ -1673,11 +1732,74 @@ struct LLMSettingsView: View {
     }
 }
 
+struct SecondBrainSkillEditor: View {
+    let skillRoot: String
+    @State private var text = ""
+    @State private var savedText = ""
+    @State private var status = ""
+
+    var body: some View {
+        DisclosureGroup("Edit embedded Second Brain skill") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(skillURL.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                TextEditor(text: $text)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 260)
+                    .border(Color.secondary.opacity(0.3))
+                HStack {
+                    Button("Save") { save() }.disabled(text == savedText)
+                    Button("Restore bundled version") { restore() }
+                    if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            .padding(.top, 8)
+        }
+        .onAppear { load() }
+        .onChange(of: skillRoot) { _ in load() }
+    }
+
+    private var skillURL: URL {
+        URL(fileURLWithPath: skillRoot).appendingPathComponent("SKILL.md")
+    }
+
+    private func load() {
+        do {
+            text = try String(contentsOf: skillURL, encoding: .utf8)
+            savedText = text
+            status = ""
+        } catch {
+            text = ""
+            savedText = ""
+            status = error.localizedDescription
+        }
+    }
+
+    private func save() {
+        do {
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw NSError(domain: "SecondBrainSkill", code: 2, userInfo: [NSLocalizedDescriptionKey: "SKILL.md cannot be empty."])
+            }
+            try text.write(to: skillURL, atomically: true, encoding: .utf8)
+            savedText = text
+            status = "Saved"
+        } catch { status = error.localizedDescription }
+    }
+
+    private func restore() {
+        do {
+            text = try SecondBrainSkillManager.bundledSkillText()
+            try text.write(to: skillURL, atomically: true, encoding: .utf8)
+            savedText = text
+            status = "Restored"
+        } catch { status = error.localizedDescription }
+    }
+}
+
 struct SettingsTab: View {
     @ObservedObject var link: LinkManager
     @ObservedObject var updates: MacUpdateController
     @AppStorage("pi.executable") private var piExecutable = "pi"
-    @AppStorage("pi.secondBrainSkill") private var piSecondBrainSkill = NSHomeDirectory() + "/.agents/skills/second-brain"
+    @AppStorage("pi.secondBrainSkill") private var piSecondBrainSkill = SecondBrainSkillManager.installedURL().path
     @AppStorage("secondBrain.root") private var secondBrainRoot = NSHomeDirectory() + "/second_brain"
     @AppStorage("meetings.root") private var meetingsRoot = (FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent("AndroidBridgeMeetings").path
     @State private var relayEndpoint = ""
@@ -1802,6 +1924,7 @@ struct SettingsTab: View {
                 pathRow("Meetings folder", text: $meetingsRoot, chooseFolder: true)
                 Text("Path changes are used by the next pi, Second Brain, or meeting operation. Second Brain refresh no longer requires a relaunch.")
                     .font(.caption).foregroundStyle(.secondary)
+                SecondBrainSkillEditor(skillRoot: piSecondBrainSkill)
             }
             Section("How pi integration works") {
                 Text("Each task can use Local Ollama or pi. Local Ollama is the default and uses the model name in the row, usually gemma4:e4b.")

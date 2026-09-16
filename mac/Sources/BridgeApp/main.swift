@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     private var screenShown = false
     private var toastPanels: [NSPanel] = []
     private var callPanel: NSPanel?
+    private var meetingReviewPanel: NSPanel?
+    private var meetingReviewMeetingId: String?
+    private var pendingMeetingReviews: [MeetingCalendarReview] = []
     private var cancellables = Set<AnyCancellable>()
     private let updates = MacUpdateController()
     private let presence = TrustedPresenceController()
@@ -30,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
+        do {
+            try SecondBrainSkillManager.installBundledSkillIfNeeded()
+        } catch {
+            diag("second-brain skill installation failed: \(error.localizedDescription)")
+        }
 
         // Pin the item as far RIGHT as a third-party item is allowed to sit, because a
         // crowded menu bar hides the leftmost items first.
@@ -111,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
             case "ended": self?.dismissCallPanel()
             default: break
             }
+        }.store(in: &cancellables)
+
+        LinkManager.shared.calendarReviewSubject.receive(on: RunLoop.main).sink { [weak self] review in
+            self?.enqueueMeetingReview(review)
         }.store(in: &cancellables)
 
         openDashboard()
@@ -282,7 +294,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         let copyText = userInfo["path"] as? String ?? body
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 90),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .floating
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -320,7 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         callPanel?.orderOut(nil)
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 138),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .floating
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -334,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
             onAnswer: { LinkManager.shared.answerCall(); dismiss() },
             onDecline: { LinkManager.shared.hangupCall(); dismiss() }))
         if let vf = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: vf.maxX - 356, y: vf.maxY - 154))
+            panel.setFrameOrigin(NSPoint(x: vf.minX + 16, y: vf.maxY - 154))
         }
         panel.orderFrontRegardless()
         callPanel = panel
@@ -344,13 +360,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         }
     }
 
+    private func enqueueMeetingReview(_ review: MeetingCalendarReview) {
+        guard meetingReviewPanel == nil else {
+            if meetingReviewMeetingId != review.meeting.id,
+               !pendingMeetingReviews.contains(where: { $0.meeting.id == review.meeting.id }) {
+                pendingMeetingReviews.append(review)
+            }
+            return
+        }
+        showMeetingReview(review)
+    }
+
+    private func showMeetingReview(_ review: MeetingCalendarReview) {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
+                            styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        panel.title = "Review meeting"
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        let finish: () -> Void = { [weak self, weak panel] in
+            panel?.orderOut(nil)
+            panel?.contentView = nil
+            self?.meetingReviewPanel = nil
+            self?.meetingReviewMeetingId = nil
+            guard let next = self?.pendingMeetingReviews.first else { return }
+            self?.pendingMeetingReviews.removeFirst()
+            self?.showMeetingReview(next)
+        }
+        panel.contentView = NSHostingView(rootView: MeetingCalendarReviewView(
+            review: review,
+            customers: LinkManager.shared.customers,
+            onDismiss: {
+                finish()
+                LinkManager.shared.dismissCalendarCandidates(for: review.meeting)
+            },
+            onSave: { event, customer in
+                LinkManager.shared.saveMeetingReview(event: event, customer: customer, for: review.meeting)
+                finish()
+            }
+        ))
+        panel.center()
+        meetingReviewPanel = panel
+        meetingReviewMeetingId = review.meeting.id
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+    }
+
     /// Once a call is active, replace the ringing panel with an in-call panel (elapsed time + End Call).
     private func showActiveCallPanel(number: String, name: String) {
         diag("ACTIVE_CALL_PANEL name=\(name)")
         callPanel?.orderOut(nil)
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 138),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.level = .floating
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -363,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
             name: name, number: number, start: Date(),
             onEnd: { LinkManager.shared.hangupCall(); dismiss() }))
         if let vf = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: vf.maxX - 356, y: vf.maxY - 154))
+            panel.setFrameOrigin(NSPoint(x: vf.minX + 16, y: vf.maxY - 154))
         }
         panel.orderFrontRegardless()
         callPanel = panel
