@@ -796,3 +796,32 @@ private func writeMergeSource(_ root: URL, name: String, text: String) throws {
     try line.write(to: dir.appendingPathComponent("transcript.jsonl"), atomically: true, encoding: .utf8)
     try writeSilentWav(dir.appendingPathComponent("media/chunk.wav"))
 }
+
+final class MeetingRecoveryTests: XCTestCase {
+    /// A meeting left mid-recording by a crash, a quit, or a stalled recorder
+    /// must not come back as "Recording" — nothing is capturing audio for it,
+    /// so the elapsed clock would tick forever with no way to stop it.
+    func testRecoveryClearsAStrandedRecordingState() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MeetingStore(root: root)
+        store.appendTranscript(meetingId: "stranded", segment: TranscriptSegment(speaker: "A", startMs: 0, endMs: 1, text: "cut off"))
+        store.setProcessingState(meetingId: "stranded", state: .recording)
+
+        store.recoverInterruptedProcessing()
+
+        XCTAssertEqual(store.listMeetings().first?.processingState, .needsAttention)
+    }
+
+    func testRecoveryLeavesAnActiveMeetingAlone() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MeetingStore(root: root)
+        store.appendTranscript(meetingId: "live", segment: TranscriptSegment(speaker: "A", startMs: 0, endMs: 1, text: "ongoing"))
+        store.setProcessingState(meetingId: "live", state: .recording)
+
+        store.recoverInterruptedProcessing(activeIds: ["live"])
+
+        XCTAssertEqual(store.listMeetings(activeIds: ["live"]).first?.processingState, .recording)
+    }
+}

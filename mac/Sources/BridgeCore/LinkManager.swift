@@ -87,6 +87,11 @@ public final class LinkManager: ObservableObject {
     private var pendingCustomerEvents: [String: MeetingCalendarEvent] = [:]
     private var zoomAutoMeetingActive = false
     private var autoMeetingMissingSince: Date?
+    /// Meeting id currently asking the user "are you still in this meeting?".
+    @Published public private(set) var longRunningMeetingId: String?
+    /// How long the meeting in `longRunningMeetingId` has been recording.
+    @Published public private(set) var longRunningMeetingElapsed: TimeInterval = 0
+    private var longMeetingWatchdogs: [String: LongMeetingWatchdog] = [:]
     private let brainStore = SecondBrainStore()
     private let customerStore = MeetingCustomerStore()
     private let meetingContentMirror = MeetingContentMirror()
@@ -219,9 +224,12 @@ public final class LinkManager: ObservableObject {
         relayTransport.onState = { [weak self] state, generation in self?.handleRelayState(state, generation: generation) }
         relayTransport.onFrame = { [weak self] data, generation in self?.handleRelayFrame(data, generation: generation) }
         cleanReceivedFiles()
-        meetingStore.recoverInterruptedProcessing()
+        meetingStore.recoverInterruptedProcessing(activeIds: activeMeetingIds)
         macRecorder.onUpdate = { [weak self] in self?.refreshMeetings() }
         macRecorder.onFinished = { [weak self] notes in self?.completeFinalization(notesURL: notes, sourceMeetingId: nil) }
+        macRecorder.onStopped = { [weak self] id in
+            DispatchQueue.main.async { self?.finishMacMeeting(id) }
+        }
         refreshMeetings()
         // Initial state: register the installed app for Calendar access and
         // generate summaries that are still missing.
@@ -282,6 +290,65 @@ public final class LinkManager: ObservableObject {
         DispatchQueue.main.async {
             self.dbg("AUTO_MEETING watcher started")
             Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in self?.pollVideoMeeting() }
+            Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.pollLongRunningMeetings() }
+        }
+    }
+
+    /// Asks the user to confirm a meeting that has been recording for hours,
+    /// and ends it if nobody answers. See `LongMeetingWatchdog`.
+    private func pollLongRunningMeetings() {
+        let now = Date()
+        longMeetingWatchdogs = longMeetingWatchdogs.filter { activeMeetingIds.contains($0.key) }
+        for id in activeMeetingIds where longMeetingWatchdogs[id] == nil {
+            let startedMs = meetingStartTimes[id] ?? Int(now.timeIntervalSince1970 * 1000)
+            longMeetingWatchdogs[id] = LongMeetingWatchdog(startedAt: Date(timeIntervalSince1970: Double(startedMs) / 1000))
+        }
+
+        for (id, watchdog) in longMeetingWatchdogs {
+            switch watchdog.decision(now: now) {
+            case .idle:
+                if longRunningMeetingId == id { clearLongMeetingPrompt() }
+            case .prompt:
+                longMeetingWatchdogs[id]?.markPrompted(at: now)
+                let elapsed = now.timeIntervalSince(watchdog.startedAt)
+                DispatchQueue.main.async {
+                    self.longRunningMeetingId = id
+                    self.longRunningMeetingElapsed = elapsed
+                }
+            case .autoStop:
+                pushEvent("⏱️ Recording ran \(Int(now.timeIntervalSince(watchdog.startedAt) / 3600))h with no confirmation — stopping and saving")
+                stopLongRunningMeeting(id)
+            }
+        }
+    }
+
+    /// The user confirmed the meeting is still going: keep recording and ask
+    /// again in another two hours.
+    public func acknowledgeLongRunningMeeting() {
+        guard let id = longRunningMeetingId else { return }
+        longMeetingWatchdogs[id]?.acknowledge(at: Date())
+        clearLongMeetingPrompt()
+        pushEvent("🎙️ Meeting confirmed still running")
+    }
+
+    /// The user answered "no, it's over" — or nobody answered at all.
+    public func stopLongRunningMeeting(_ meetingId: String? = nil) {
+        guard let id = meetingId ?? longRunningMeetingId else { return }
+        clearLongMeetingWatchdog(id)
+        if macMeetingActive && macRecorder.isRecording { stopMeetingOnMac() }
+        else if macStartedMeetingId == id { stopMeetingOnPhone() }
+        else { beginPhoneMeetingFinalization(meetingId: id, endedAtMs: Int(Date().timeIntervalSince1970 * 1000)) }
+    }
+
+    private func clearLongMeetingWatchdog(_ meetingId: String) {
+        longMeetingWatchdogs.removeValue(forKey: meetingId)
+        if longRunningMeetingId == meetingId { clearLongMeetingPrompt() }
+    }
+
+    private func clearLongMeetingPrompt() {
+        DispatchQueue.main.async {
+            self.longRunningMeetingId = nil
+            self.longRunningMeetingElapsed = 0
         }
     }
 
@@ -1008,6 +1075,7 @@ public final class LinkManager: ObservableObject {
         meetingStore.setProcessingState(meetingId: meetingId, state: .finalizing)
         meetingStartTimes.removeValue(forKey: meetingId)
         activeMeetingIds.remove(meetingId)
+        clearLongMeetingWatchdog(meetingId)
         DispatchQueue.main.async { self.phoneMeetingActive = false }
         refreshMeetings()
         pushEvent("📝 Recording stopped — finalizing in background")
@@ -1135,7 +1203,9 @@ public final class LinkManager: ObservableObject {
             pushEvent("⚠️ Mac recording failed to start")
             return
         }
-        meetingStore.markStarted(meetingId: id, startedAtMs: Int(Date().timeIntervalSince1970 * 1000))
+        let startedAt = Int(Date().timeIntervalSince1970 * 1000)
+        meetingStartTimes[id] = startedAt
+        meetingStore.markStarted(meetingId: id, startedAtMs: startedAt)
         meetingStore.setProcessingState(meetingId: id, state: .recording)
         activeMeetingIds.insert(id)
         DispatchQueue.main.async { self.macMeetingActive = true }
@@ -1144,11 +1214,22 @@ public final class LinkManager: ObservableObject {
     }
 
     public func stopMeetingOnMac() {
-        guard let meetingId = macRecorder.stop() else { return }
+        // The recorder's `onStopped` callback does the bookkeeping, so this is
+        // also correct when the recorder already stopped itself.
+        _ = macRecorder.stop()
+    }
+
+    /// Clears every trace of an active Mac meeting. Safe to call twice.
+    private func finishMacMeeting(_ meetingId: String) {
+        guard activeMeetingIds.contains(meetingId) || macMeetingActive else { return }
         let endedAtMs = Int(Date().timeIntervalSince1970 * 1000)
         meetingStore.markEnded(meetingId: meetingId, endedAtMs: endedAtMs)
         meetingStore.setProcessingState(meetingId: meetingId, state: .finalizing)
         activeMeetingIds.remove(meetingId)
+        meetingStartTimes.removeValue(forKey: meetingId)
+        clearLongMeetingWatchdog(meetingId)
+        zoomAutoMeetingActive = false
+        autoMeetingMissingSince = nil
         DispatchQueue.main.async { self.macMeetingActive = false }
         refreshMeetings()
         pushEvent("📝 Mac recording stopped — finalizing in background")

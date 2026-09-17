@@ -200,9 +200,17 @@ public final class MeetingStore {
         _ = writeNotes(in: meeting.url, meetingId: clean, photos: [], generateSummary: false)
     }
 
-    public func recoverInterruptedProcessing() {
+    /// Clears states that cannot survive a restart. `.finalizing` means a
+    /// summary run died partway; `.recording` means a recorder was killed or
+    /// stalled mid-meeting — nothing is capturing audio for it any more, so
+    /// leaving it marked as recording strands it with a forever-ticking clock
+    /// and a Stop button that does nothing.
+    public func recoverInterruptedProcessing(activeIds: Set<String> = []) {
+        let stranded: Set<MeetingProcessingState> = [.finalizing, .recording]
         let dirs = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        for dir in dirs where dir.hasDirectoryPath && processingState(in: dir) == .finalizing {
+        for dir in dirs where dir.hasDirectoryPath
+            && !activeIds.contains(dir.lastPathComponent)
+            && stranded.contains(processingState(in: dir)) {
             _ = write(MeetingProcessingState.needsAttention.rawValue, to: dir.appendingPathComponent("processingState.txt"))
         }
     }

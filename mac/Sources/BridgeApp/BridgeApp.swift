@@ -199,6 +199,12 @@ struct DashboardView: View {
         .sheet(isPresented: $ui.showSetup) {
             SetupWizardView(link: link)
         }
+        .alert("Still recording?", isPresented: longMeetingPromptPresented) {
+            Button("Keep recording") { link.acknowledgeLongRunningMeeting() }
+            Button("Stop and save", role: .destructive) { link.stopLongRunningMeeting(nil) }
+        } message: {
+            Text(longMeetingPromptMessage)
+        }
         .alert("Update Available", isPresented: $updates.showConsent, presenting: updates.availableUpdate) { update in
             Button("Not Now", role: .cancel) {}
             Button("Download \(update.version.description)") { updates.approveDownload() }
@@ -217,6 +223,29 @@ struct DashboardView: View {
         } message: {
             Text("Open the verified disk image, drag AndroidBridge.app to Applications, then Control-click the app and choose Open the first time. This build is not Apple-notarized.")
         }
+    }
+
+    /// Shown once a meeting has been recording for two hours. Dismissing the
+    /// alert any other way counts as "keep recording", so the prompt returns in
+    /// another two hours rather than ending the meeting by accident.
+    private var longMeetingPromptPresented: Binding<Bool> {
+        Binding(
+            get: { link.longRunningMeetingId != nil },
+            set: { presented in if !presented { link.acknowledgeLongRunningMeeting() } }
+        )
+    }
+
+    private var longMeetingPromptMessage: String {
+        let duration = longMeetingDuration(link.longRunningMeetingElapsed)
+        return "This meeting has been recording for \(duration). If nobody answers within 30 minutes it will be stopped and saved automatically."
+    }
+
+    /// "2 hours 5 minutes" — plain wording for the long-meeting prompt.
+    private func longMeetingDuration(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .full
+        return formatter.string(from: seconds) ?? "a long time"
     }
 
     private func toggleMeeting(_ id: String) {
